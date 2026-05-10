@@ -5,6 +5,7 @@ import matplotlib.colors as mcolors
 import matplotlib.patches as mpatches
 from collections import deque
 import heapq
+import random
 import time
 import os
 import sys
@@ -232,7 +233,6 @@ def animate_solver(maze, result, title, output_file, fps=20, max_frames=200):
     path = result.path
     start, goal = path[0], path[-1]
 
-    # Exploración
     explore_cap = max(10, max_frames - 40)
     if len(explored) > explore_cap:
         milestones = np.linspace(0, len(explored) - 1, explore_cap, dtype=int).tolist()
@@ -240,7 +240,6 @@ def animate_solver(maze, result, title, output_file, fps=20, max_frames=200):
         milestones = list(range(len(explored)))
     explore_frames = len(milestones)
 
-    # Ruta
     path_steps = min(30, len(path))
     path_milestones = np.linspace(0, len(path) - 1, path_steps, dtype=int).tolist()
     path_frames = len(path_milestones)
@@ -332,7 +331,6 @@ def compare_solvers(maze, start, goal, output_dir='.'):
         results[name] = res
         print(f"  {name:<10} {res.path_length:>8} {res.nodes_explored:>12} {res.time_ms:>13.2f}")
 
-    # 2×2 comparativa visual
     fig, axes = plt.subplots(2, 2, figsize=(18, 14))
     fig.patch.set_facecolor('#1a1a2e')
     fig.suptitle(
@@ -378,6 +376,117 @@ def compare_solvers(maze, start, goal, output_dir='.'):
     return results
 
 
+# Comparación en K escenarios (Problema 3)
+
+def plot_ranking_summary(totals, algo_names, K, output_dir):
+    #Barras comparativas de nodos explorados, tiempo y longitud de camino.
+    fig, axes = plt.subplots(1, 3, figsize=(15, 5))
+    fig.patch.set_facecolor('#1a1a2e')
+    fig.suptitle(f"Comparación de Algoritmos – {K} escenarios",
+                 color='white', fontsize=13, fontweight='bold')
+
+    metrics    = ['explored', 'time_ms', 'path_len']
+    ylabels    = ['Nodos explorados', 'Tiempo (ms)', 'Longitud del camino']
+    bar_colors = ['#4fc3f7', '#ff9800', '#2ecc71', '#e74c3c']
+
+    for ax, metric, ylabel in zip(axes, metrics, ylabels):
+        ax.set_facecolor('#2d2d4e')
+        avgs = [totals[n][metric] / K for n in algo_names]
+        bars = ax.bar(algo_names, avgs, color=bar_colors[:len(algo_names)])
+        ax.set_title(f"{ylabel}\n(promedio)", color='white',
+                     fontsize=11, fontweight='bold')
+        ax.set_ylabel(ylabel, color='white')
+        ax.tick_params(colors='white')
+        for spine in ax.spines.values():
+            spine.set_edgecolor('#555')
+        for bar, val in zip(bars, avgs):
+            ax.text(bar.get_x() + bar.get_width() / 2,
+                    bar.get_height() * 1.02,
+                    f'{val:.1f}', ha='center', va='bottom',
+                    fontsize=9, color='white')
+
+    plt.tight_layout()
+    out = os.path.join(output_dir, 'comparacion_p3.png')
+    plt.savefig(out, dpi=150, bbox_inches='tight', facecolor='#1a1a2e')
+    print(f"\n  Imagen guardada: comparacion_p3.png")
+    plt.show()
+
+
+def compare_k_scenarios(rows: int = 65, cols: int = 55,
+                         K: int = 25, seed_base: int = 100,
+                         output_dir: str = '.'):
+    print(f"\n  Problema 3 – Comparación en {K} escenarios {rows}×{cols}")
+    print("=" * 62)
+
+    names  = [n for n, _ in _ALGORITHMS]
+    totals = {n: {'explored': 0.0, 'path_len': 0.0,
+                  'time_ms': 0.0, 'rank_sum': 0}
+              for n in names}
+    all_rows = []
+
+    for k in range(K):
+        random.seed(seed_base + k)
+        maze, _ = kruskal_maze(rows, cols, seed=seed_base + k)
+
+        # Inicio y meta con distancia Manhattan >= 10
+        while True:
+            ar, ac = random.randint(0, rows - 1), random.randint(0, cols - 1)
+            br, bc = random.randint(0, rows - 1), random.randint(0, cols - 1)
+            if abs(ar - br) + abs(ac - bc) >= 10:
+                break
+
+        start, goal = (ar, ac), (br, bc)
+        res = {name: algo(maze, start, goal) for name, algo in _ALGORITHMS}
+
+        # Ranking por nodos explorados (1 = menos explorados = mejor)
+        ordered = sorted(names, key=lambda n: res[n].nodes_explored)
+        ranks   = {n: rank for rank, n in enumerate(ordered, 1)}
+
+        for name in names:
+            totals[name]['explored'] += res[name].nodes_explored
+            totals[name]['path_len'] += res[name].path_length
+            totals[name]['time_ms']  += res[name].time_ms
+            totals[name]['rank_sum'] += ranks[name]
+
+        all_rows.append({'k': k + 1, 'start': start, 'goal': goal,
+                         'res': res, 'ranks': ranks})
+
+        print(f"  Esc {k+1:>2}/{K}  A={str(start):>9}  B={str(goal):>9}", end='')
+        for name in names:
+            print(f"  {name}:#{ranks[name]}", end='')
+        print()
+
+    # Tabla detallada por escenario
+    print(f"\n{'=' * 62}")
+    print(f"  {'Esc':>3}  {'Inicio':>9}  {'Meta':>9}", end='')
+    for name in names:
+        print(f"  {name:>5} {'exp':>5} {'lon':>4}", end='')
+    print()
+    print(f"  {'-' * 60}")
+    for sc in all_rows:
+        print(f"  {sc['k']:>3}  {str(sc['start']):>9}  {str(sc['goal']):>9}", end='')
+        for name in names:
+            r = sc['res'][name]
+            print(f"  #{sc['ranks'][name]:1} {r.nodes_explored:>5} {r.path_length:>4}", end='')
+        print()
+
+    # Informe final con promedios
+    print(f"\n{'=' * 62}")
+    print(f"  RESULTADOS FINALES – Promedios sobre {K} escenarios")
+    print(f"  {'Pos':>3}  {'Algoritmo':<8} {'Nodos':>10} "
+          f"{'Camino':>8} {'ms':>10} {'Rank':>8}")
+    print(f"  {'-' * 52}")
+    sorted_names = sorted(names, key=lambda n: totals[n]['rank_sum'])
+    for pos, name in enumerate(sorted_names, 1):
+        t = totals[name]
+        print(f"  {pos:>3}. {name:<8} {t['explored']/K:>10.1f} "
+              f"{t['path_len']/K:>8.1f} {t['time_ms']/K:>10.2f} "
+              f"{t['rank_sum']/K:>8.2f}")
+
+    plot_ranking_summary(totals, names, K, output_dir)
+    return all_rows, totals
+
+
 # Main
 def main():
     ROWS, COLS = 60, 80
@@ -388,10 +497,12 @@ def main():
     OUTPUT_DIR = os.path.join(os.path.dirname(os.path.abspath(__file__)), 'outputs')
     os.makedirs(OUTPUT_DIR, exist_ok=True)
 
-    print("  Proyecto 2 – IA 2026: Solución de Laberintos (Inciso 2)")
+    print("  IA 2026: Solución de Laberintos")
     print("=" * 60)
 
-    print("\nGenerando laberinto 60×80 con Kruskal (seed=42)...")
+    # ── Problema 2: Solución de laberinto 60×80 ──────────────────
+    print("\nProblema 2 – Solución de laberinto 60×80")
+    print("Generando laberinto 60×80 con Kruskal (seed=42)...")
     maze, _ = kruskal_maze(ROWS, COLS, seed=SEED)
 
     # 1. Imagen comparativa estática (corre los 4 algoritmos)
@@ -414,6 +525,11 @@ def main():
             fps=20, max_frames=200,
         )
 
+    # Problema 3: Comparación en 25 laberintos 45×55
+    compare_k_scenarios(rows=45, cols=55, K=25,
+                        seed_base=200, output_dir=OUTPUT_DIR)
+
     print("\nTodos los archivos generados exitosamente.")
+
 
 main()
