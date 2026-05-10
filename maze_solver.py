@@ -412,7 +412,63 @@ def plot_ranking_summary(totals, algo_names, K, output_dir):
     plt.show()
 
 
-def compare_k_scenarios(rows: int = 65, cols: int = 55,
+def plot_scenario(maze, res, ranks, start, goal, k, output_dir):
+    fig = plt.figure(figsize=(20, 10))
+    fig.patch.set_facecolor('#1a1a2e')
+    fig.suptitle(f"Escenario {k}  —  {maze.rows}×{maze.cols}  |  A={start}  B={goal}",
+                 color='white', fontsize=13, fontweight='bold')
+
+    # 4 laberintos
+    positions = [1, 2, 4, 5]
+    axes = [fig.add_subplot(2, 3, p) for p in positions]
+
+    for ax, (name, _) in zip(axes, _ALGORITHMS):
+        ax.set_facecolor('#1a1a2e')
+        r = res[name]
+        display = _base_display(maze)
+        _paint_explored(display, r.explored, maze)
+        _paint_path(display, r.path)
+        if r.path:
+            _paint_endpoints(display, r.path[0], r.path[-1])
+        ax.imshow(display, cmap=_CMAP, norm=_NORM, interpolation='nearest')
+        ax.set_title(f"{name}  #{ranks[name]}", color='white', fontsize=11, fontweight='bold')
+        ax.axis('off')
+
+    # Tabla de resultados
+    ax_table = fig.add_subplot(1, 3, 3)
+    ax_table.set_facecolor('#2d2d4e')
+    ax_table.axis('off')
+
+    col_labels = ['Algoritmo', 'Camino', 'Explorados', 'Tiempo (ms)', 'Lugar']
+    table_data = []
+    for name, _ in _ALGORITHMS:
+        r = res[name]
+        table_data.append([name, r.path_length, r.nodes_explored,
+                           f'{r.time_ms:.2f}', f'#{ranks[name]}'])
+
+    table = ax_table.table(
+        cellText=table_data,
+        colLabels=col_labels,
+        loc='center',
+        cellLoc='center',
+    )
+    table.auto_set_font_size(False)
+    table.set_fontsize(11)
+    table.scale(1.2, 2.0)
+
+    for (row, col), cell in table.get_celld().items():
+        cell.set_facecolor('#1a1a2e' if row == 0 else '#2d2d4e')
+        cell.set_text_props(color='white')
+        cell.set_edgecolor('#555')
+
+    plt.tight_layout()
+    out = os.path.join(output_dir, f'p3_escenario_{k:02d}.png')
+    plt.savefig(out, dpi=120, bbox_inches='tight', facecolor='#1a1a2e')
+    plt.close(fig)
+    print(f"  Guardado: p3_escenario_{k:02d}.png")
+
+
+def compare_k_scenarios(rows: int = 45, cols: int = 55,
                          K: int = 25, seed_base: int = 100,
                          output_dir: str = '.'):
     print(f"\n  Problema 3 – Comparación en {K} escenarios {rows}×{cols}")
@@ -451,6 +507,8 @@ def compare_k_scenarios(rows: int = 65, cols: int = 55,
         all_rows.append({'k': k + 1, 'start': start, 'goal': goal,
                          'res': res, 'ranks': ranks})
 
+        plot_scenario(maze, res, ranks, start, goal, k + 1, output_dir)
+        
         print(f"  Esc {k+1:>2}/{K}  A={str(start):>9}  B={str(goal):>9}", end='')
         for name in names:
             print(f"  {name}:#{ranks[name]}", end='')
